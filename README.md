@@ -65,7 +65,13 @@ LUNA_SITE_ISRO/
 
 ## 🚀 How to Run the Mission Control Dashboard
 
-LUNA-SITE is designed with an "Inference-First" strategy. The pre-computed data pipelines are exposed via an interactive Python dashboard.
+LUNA-SITE is designed with an "Inference-First" strategy. The pre-computed data pipelines are exposed via an interactive Python dashboard featuring 6 specialized UI modes:
+- **🗺️ View Lunar Maps:** Topographic rendering of the Mons Mouton region.
+- **🧊 View Ice Probability Maps:** Visualizing CNN predictions, CPR/DOP, and Grad-CAM heatmaps.
+- **⚠️ View Hazard Maps:** Dual-Zone constraint logic identifying boulders and steep slopes.
+- **🎯 Select Landing Sites:** Evaluating the NSGA-II Pareto Front to balance ice volume vs safety.
+- **🚀 Run Rover Simulations:** Live ROS2/Gazebo digital twin telemetry simulating RRT* + DWA obstacle avoidance.
+- **🔋 Rover Battery Telemetry:** Energy-aware navigation tracking predicted power consumption across the traverse.
 
 1. Clone the repository:
    ```bash
@@ -74,7 +80,7 @@ LUNA-SITE is designed with an "Inference-First" strategy. The pre-computed data 
    ```
 2. Install the requirements:
    ```bash
-   pip install torch torchvision ultralytics streamlit matplotlib numpy
+   pip install -r requirements.txt
    ```
 3. Launch the Dashboard:
    ```bash
