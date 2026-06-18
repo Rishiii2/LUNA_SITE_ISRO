@@ -47,7 +47,7 @@ elif mode == "Radar Analytics (Layer 3)":
     st.markdown("Analyzing L-Band & S-Band polarimetric scattering...")
     # Placeholder for actual radar visualization
     st.info("CPR > 1 and DOP < 0.13 Volumetric Scattering Detected.")
-    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/c2/Water_ice_at_the_lunar_south_pole.jpg/800px-Water_ice_at_the_lunar_south_pole.jpg", caption="Reference: Lunar South Pole Ice Map (NASA)")
+    st.image("presentation_images/cpr_dop_map.png", caption="DFSAR CPR/DOP Map — LUNA-SITE Layer 3")
     
 elif mode == "Rover Telemetry (Layer 18)":
     st.title("ROS2 + Gazebo Rover Live Telemetry")

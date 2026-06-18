@@ -25,7 +25,7 @@ def compute_cpr_dop(stokes_vector):
     
     # Safe division
     with np.errstate(divide='ignore', invalid='ignore'):
-        cpr = (S1 - S4) / (S1 + S4)
+        cpr = (S1 - S4) / (S1 + S4) # S1 is actually S0 (Total Intensity) here
         dop = np.sqrt(S2**2 + S3**2 + S4**2) / S1
         
     return cpr, dop

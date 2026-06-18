@@ -42,9 +42,15 @@ def train_luna_site(data_dir, epochs=5, batch_size=16):
             predictions = model(features)
             
             # Loss Calculation
-            # Note: A true Physics-Informed Neural Network (PINN) would add a regularization
-            # term here penalizing L = λ / (4π × tan_δ) bounds. 
-            loss = criterion_bce(predictions, targets)
+            # We add a regularization term here penalizing L = λ / (4π × tan_δ) bounds. 
+            dop_batch = features[:, 3, 32, 32]  # sample center DOP value
+            lambda_L = 0.24  # L-band wavelength in meters
+            eps = 1e-6
+            predicted_depth = predictions.squeeze() * 4.0  # scale to 0-4m range
+            physics_depth = lambda_L / (4 * np.pi * (dop_batch.detach().cpu().numpy() + eps))
+            physics_loss = torch.mean((predictions.squeeze() - torch.tensor(physics_depth / 4.0).to(device, dtype=torch.float32))**2)
+
+            loss = criterion_bce(predictions, targets) + 0.1 * physics_loss
             
             # Backward pass & Optimize
             loss.backward()
@@ -62,4 +68,4 @@ def train_luna_site(data_dir, epochs=5, batch_size=16):
     print(f"\n[✔] Training Complete! Best weights saved to: {save_path}")
 
 if __name__ == "__main__":
-    train_luna_site(data_dir=r"C:\Users\rishi\Downloads\ISRO\code\data", epochs=5)
+    train_luna_site(data_dir="data", epochs=5)

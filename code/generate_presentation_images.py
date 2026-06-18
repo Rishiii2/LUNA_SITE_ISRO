@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import os
 
 # Ensure we save the images in the same directory as the script
-output_dir = r"C:\Users\rishi\Downloads\ISRO\code\presentation_images"
+output_dir = "presentation_images"
 os.makedirs(output_dir, exist_ok=True)
 
 # ---------------------------------------------------------

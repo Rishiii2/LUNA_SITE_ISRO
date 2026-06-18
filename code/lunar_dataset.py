@@ -63,7 +63,7 @@ def get_dataloader(data_dir, batch_size=16):
 
 if __name__ == "__main__":
     print("[Layer 0] Testing LunarIceDataset PyTorch DataLoader...")
-    loader = get_dataloader(r"C:\Users\rishi\Downloads\ISRO\code\data", batch_size=4)
+    loader = get_dataloader("data", batch_size=4)
     features, targets = next(iter(loader))
     print(f"Features Batch Shape: {features.shape} (Batch, Channels, H, W)")
     print(f"Targets Batch Shape: {targets.shape} (Batch, Label)")

@@ -3,7 +3,7 @@ def in_psr(lat, lon):
     Mock function checking if target coordinates fall within a Permanently Shadowed Region (PSR).
     For demonstration, any latitude below -85.0 is considered PSR.
     """
-    return lat < -85.0
+    return lat < -87.0
 
 def run_dual_zone_hazard_mapping(lat, lon, optical_image_path=None, dem_path=None):
     print(f"\n--- [Layer 10] LUNA-SITE Dual-Zone Hazard Mapping ---")

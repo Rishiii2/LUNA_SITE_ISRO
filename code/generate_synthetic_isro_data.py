@@ -37,4 +37,4 @@ def create_synthetic_dataset(base_dir, num_samples=100):
     print(f"[✔] Successfully generated synthetic datasets in {data_dir}")
 
 if __name__ == "__main__":
-    create_synthetic_dataset(r"C:\Users\rishi\Downloads\ISRO\code")
+    create_synthetic_dataset("data")
