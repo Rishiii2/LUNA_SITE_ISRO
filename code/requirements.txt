@@ -7,8 +7,9 @@ torchvision==0.17.2
 numpy==1.26.4
 scipy==1.13.0
 
-# Physics tracking
+# Physics & Data Parsing
 filterpy==1.4.5
+pds4_tools==1.3
 
 # Multi-objective optimisation (NSGA-II)
 pymoo==0.6.1.3

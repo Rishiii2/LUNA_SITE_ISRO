@@ -16,14 +16,26 @@
 **The Problem:** Optical sensors fail in 25K pitch-black craters (The Optical Paradox). Traditional neural networks act as black boxes, providing point estimates without physical uncertainty bounds.
 **Our Solution:** We leverage Chandrayaan-2's **Dual Frequency Synthetic Aperture Radar (DFSAR)** to detect volumetric scattering caused by water ice crystals, processing the 4-channel Stokes Vectors through a Physics-Informed Neural Network (PINN).
 
+### Scientific Validation
+LUNA-SITE's baseline detection algorithms are validated against NASA mini-RF and Chandrayaan-2 DFSAR baseline readings from the **Faustini** and **Shackleton** doubly shadowed craters.
+
 ---
 
 ## 🏗️ The 21-Layer Architecture (5 Phases)
 
 LUNA-SITE operates on a shared data contract tied to the **South Polar Stereographic Projection (EPSG:3031)**.
 
+```mermaid
+graph TD;
+    A[ISRO DFSAR PDS4 Data] --> B[Phase 1: Radar Physics]
+    B --> C(Phase 2: PINN + Explainable AI)
+    C --> D{Phase 3: Hazard & Terrain Maps}
+    D --> E[Phase 4: NSGA-II Landing Optimization]
+    E --> F((Phase 5: ROS2 Digital Twin))
+```
+
 ### Phase 1: PSR & Radar Ice Detection
-- **Layer 0:** PDS4 Data Parsing
+- **Layer 0:** PDS4 Data Parsing (via `pds4_tools` to natively handle ISRO XML labels)
 - **Layer 1-2:** PSR & Doubly Shadowed Crater Mapping via SPICE Toolkits
 - **Layer 3:** CPR (>1) & DOP (<0.13) Target Detection
 - **Layer 4-5:** Terrain Roughness Rejection & Kalman Smoothing
@@ -56,36 +68,37 @@ LUNA_SITE_ISRO/
 │   ├── generate_synthetic_isro_data.py # Data generator for test bounds
 │   ├── luna_site_dashboard.py        # Layer 19: Streamlit Mission Control UI
 │   ├── lunar_dataset.py              # PyTorch DataLoader for DFSAR tensors
+│   ├── nsga2_optimizer.py            # Layer 15: Landing Site Multi-Objective Optimizer
+│   ├── requirements.txt              # Standard Python dependencies
+│   ├── rrt_star_planner.py           # Layer 17: Energy-Aware RRT* Global Planner
+│   ├── run_demo.py                   # Master Script: End-to-end pipeline execution
 │   ├── train_cnn_pinn.py             # Layer 8: Physics-Informed Training loop
-│   ├── train_yolo_hazards.py         # Layer 10: Ultralytics fine-tuning script
 │   └── yolo_hazard_mapper.py         # Layer 10: Dual-Zone constraint switch
-├── LUNA_SITE_Final_Pitch.pptx        # Master Presentation Deck
+├── docker-compose.yml                # Docker compose for 1-click execution
+├── Dockerfile                        # Dashboard container image
+├── LUNA_SITE_FINALE.pptx             # Master Presentation Deck
 └── README.md
 ```
 
-## 🚀 How to Run the Mission Control Dashboard
+## 🚀 How to Run the Project (Hackathon Finale)
 
-LUNA-SITE is designed with an "Inference-First" strategy. The pre-computed data pipelines are exposed via an interactive Python dashboard featuring 6 specialized UI modes:
-- **🗺️ View Lunar Maps:** Topographic rendering of the Mons Mouton region.
-- **🧊 View Ice Probability Maps:** Visualizing CNN predictions, CPR/DOP, and Grad-CAM heatmaps.
-- **⚠️ View Hazard Maps:** Dual-Zone constraint logic identifying boulders and steep slopes.
-- **🎯 Select Landing Sites:** Evaluating the NSGA-II Pareto Front to balance ice volume vs safety.
-- **🚀 Run Rover Simulations:** Live ROS2/Gazebo digital twin telemetry simulating RRT* + DWA obstacle avoidance.
-- **🔋 Rover Battery Telemetry:** Energy-aware navigation tracking predicted power consumption across the traverse.
+We have containerized the Mission Control Dashboard to guarantee execution on any judge's machine without environment errors.
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/Rishiii2/LUNA_SITE_ISRO.git
-   cd LUNA_SITE_ISRO/code
-   ```
-2. Install the requirements:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Launch the Dashboard:
-   ```bash
-   python -m streamlit run luna_site_dashboard.py
-   ```
+### 1. Pre-Compute the Demo Pipeline (Locally)
+Run the master script to process the DFSAR data, execute the NSGA-II optimizer, and pre-compute the Mons Mouton RRT* path:
+```bash
+cd code
+pip install -r requirements.txt
+python run_demo.py
+```
+
+### 2. Launch the Mission Control Dashboard (via Docker)
+Launch the interactive 6-mode Streamlit dashboard utilizing Docker Compose:
+```bash
+cd LUNA_SITE_ISRO
+docker-compose up --build
+```
+*Navigate to `http://localhost:8501` to view the Lunar Digital Twin.*
 
 ## 🛡️ We Are Not Starting From Scratch
 The core pathfinding and obstacle avoidance algorithms (RRT* and DWA) utilized in Phase 5 are directly adapted from our team's validated **Tactical Aerial Combat Simulator**, developed in MATLAB. We have successfully ported these high-speed drone collision avoidance algorithms to handle the slow, low-gravity terrain traversal of a lunar rover.
