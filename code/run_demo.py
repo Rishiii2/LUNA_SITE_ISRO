@@ -17,7 +17,7 @@ import logging
 import torch
 
 from generate_synthetic_isro_data import generate_dataset
-from cpr_dop_mapper import compute_cpr_dop
+from cpr_dop_mapper import run_cpr_dop_pipeline
 from nsga2_optimizer import generate_candidate_sites, run_nsga2
 from rrt_star_planner import LunarCostMap, EnergyAwareRRTStar
 from cnn_ice_detector import LunarIceCNN
@@ -39,8 +39,8 @@ def run_end_to_end_demo():
     logging.info(f"[Layer 1-2] Loaded Stokes Tensor for Faustini Crater: {sample_stokes.shape}")
     
     logging.info("[Layer 3] Computing CPR and DOP Physics Maps")
-    cpr_map, dop_map = compute_cpr_dop(sample_stokes)
-    logging.info(f"Target Ice Mask (CPR>1, DOP<0.13) extracted. Candidates: {np.sum((cpr_map > 1.0) & (dop_map < 0.13))}")
+    result = run_cpr_dop_pipeline(sample_stokes)
+    logging.info(f"Target Ice Mask (CPR>1, DOP<0.13) extracted. Candidates: {result['n_clean']}")
 
     # Phase 2: CNN Inference (Mock run)
     logging.info("[Layer 8] Initializing Physics-Informed CNN (PINN) for Deep Inference")
