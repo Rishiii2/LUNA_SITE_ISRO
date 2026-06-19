@@ -1,40 +1,149 @@
-import os
+"""
+LUNA-SITE | Layer 0: Synthetic ISRO DFSAR Data Generator
+=========================================================
+Generates realistic 4-channel Stokes vector patches mimicking
+Chandrayaan-2 DFSAR polarimetric radar data for the lunar south pole.
+
+Physics basis:
+  S1 = total power
+  S2 = linear polarization difference (H-V)
+  S3 = linear polarization at 45 degrees
+  S4 = circular polarization (RCP - LCP)
+
+  CPR = (S1 - S4) / (S1 + S4)   [>1.0 => volumetric ice scattering]
+  DOP = sqrt(S2^2+S3^2+S4^2)/S1 [<0.13 => depolarized = ice candidate]
+"""
+
 import numpy as np
+import os
+import json
 
-def create_synthetic_dataset(base_dir, num_samples=100):
-    """
-    Generates synthetic ISRO PRADAN (DFSAR) and LOLA DEM datasets.
-    This mimics 4-channel Stokes vectors (S1, S2, S3, S4) and DEM patches.
-    """
-    data_dir = os.path.join(base_dir, 'data')
-    os.makedirs(data_dir, exist_ok=True)
-    
-    print(f"[Layer 0] Generating {num_samples} synthetic ISRO DFSAR & LOLA DEM tiles...")
-    
-    for i in range(num_samples):
-        # 1. Generate 4-channel Stokes vector (DFSAR) - 64x64 tiles
-        # S1: Total intensity (0 to 1)
-        s1 = np.random.uniform(0.1, 1.0, (64, 64))
-        # S2, S3, S4: Polarization states
-        s2 = np.random.uniform(-0.5, 0.5, (64, 64))
-        s3 = np.random.uniform(-0.5, 0.5, (64, 64))
-        s4 = np.random.uniform(-0.5, 0.5, (64, 64))
-        
-        stokes_tensor = np.stack([s1, s2, s3, s4], axis=0)
-        
-        # 2. Generate LOLA DEM (Elevation & Illumination Mask)
-        # Elevation between -2000m and 100m
-        dem = np.random.uniform(-2000, 100, (64, 64))
-        # PSR Mask (1 = Dark, 0 = Sunlit)
-        psr_mask = np.random.choice([0.0, 1.0], size=(64, 64), p=[0.8, 0.2])
-        
-        lola_tensor = np.stack([dem, psr_mask], axis=0)
-        
-        # Save to disk as .npy to mimic parsed .img GeoTIFFs
-        np.save(os.path.join(data_dir, f'dfsar_tile_{i}.npy'), stokes_tensor)
-        np.save(os.path.join(data_dir, f'lola_tile_{i}.npy'), lola_tensor)
+SEED = 42
+np.random.seed(SEED)
 
-    print(f"[✔] Successfully generated synthetic datasets in {data_dir}")
+
+def _ice_patch(size: tuple, strength: float = 1.0) -> np.ndarray:
+    """Create a 4-channel Stokes patch with ice-like signatures."""
+    H, W = size
+    stokes = np.zeros((4, H, W), dtype=np.float32)
+    # S1: moderate total power
+    stokes[0] = np.random.normal(0.6 * strength, 0.05, (H, W)).clip(0.1, 1.5)
+    # S4: high same-sense => CPR > 1
+    stokes[3] = stokes[0] * np.random.uniform(0.55, 0.70, (H, W))
+    # S2, S3: small (depolarised => low DOP)
+    stokes[1] = np.random.normal(0.02, 0.005, (H, W))
+    stokes[2] = np.random.normal(0.02, 0.005, (H, W))
+    return stokes
+
+
+def _rock_patch(size: tuple) -> np.ndarray:
+    """Rock/regolith: high CPR from surface roughness but HIGH DOP."""
+    H, W = size
+    stokes = np.zeros((4, H, W), dtype=np.float32)
+    stokes[0] = np.random.normal(0.8, 0.08, (H, W)).clip(0.2, 2.0)
+    stokes[3] = stokes[0] * np.random.uniform(0.52, 0.62, (H, W))
+    # HIGH S2/S3 => DOP > 0.13 (distinguishes rock from ice)
+    stokes[1] = np.random.normal(0.15, 0.02, (H, W))
+    stokes[2] = np.random.normal(0.12, 0.02, (H, W))
+    return stokes
+
+
+def _regolith_patch(size: tuple) -> np.ndarray:
+    """Plain regolith: CPR < 1, DOP > 0.13."""
+    H, W = size
+    stokes = np.zeros((4, H, W), dtype=np.float32)
+    stokes[0] = np.random.normal(0.4, 0.06, (H, W)).clip(0.05, 1.2)
+    stokes[3] = stokes[0] * np.random.uniform(0.30, 0.48, (H, W))
+    stokes[1] = np.random.normal(0.08, 0.01, (H, W))
+    stokes[2] = np.random.normal(0.06, 0.01, (H, W))
+    return stokes
+
+
+def compute_cpr_dop(stokes: np.ndarray):
+    """Compute CPR and DOP from 4-channel Stokes array."""
+    S1, S2, S3, S4 = stokes[0], stokes[1], stokes[2], stokes[3]
+    eps = 1e-8
+    cpr = (S1 - S4) / (S1 + S4 + eps)
+    dop = np.sqrt(S2**2 + S3**2 + S4**2) / (S1 + eps)
+    return cpr, dop
+
+
+def generate_dataset(
+    n_samples: int = 2000,
+    patch_size: int = 64,
+    save_dir: str = "data/synthetic",
+    class_weights: tuple = (0.35, 0.35, 0.30),  # ice, rock, regolith
+) -> dict:
+    """
+    Generate a labelled synthetic DFSAR dataset.
+
+    Returns
+    -------
+    dict with keys: stokes, labels, cpr, dop, metadata
+    """
+    os.makedirs(save_dir, exist_ok=True)
+    size = (patch_size, patch_size)
+
+    n_ice      = int(n_samples * class_weights[0])
+    n_rock     = int(n_samples * class_weights[1])
+    n_regolith = n_samples - n_ice - n_rock
+
+    patches, labels, cprs, dops = [], [], [], []
+
+    generators = [
+        (_ice_patch,      n_ice,      0),  # label 1
+        (_rock_patch,     n_rock,     2),  # label 2
+        (_regolith_patch, n_regolith, 0),  # label 0
+    ]
+
+    for gen_fn, count, label in generators:
+        for _ in range(count):
+            stokes = gen_fn(size) if gen_fn != _ice_patch else gen_fn(size)
+            cpr, dop = compute_cpr_dop(stokes)
+            # Apply physics-based weak labelling override
+            ice_mask = (cpr > 1.0) & (dop < 0.13)
+            final_label = 1 if (gen_fn == _ice_patch and ice_mask.mean() > 0.5) else label
+            patches.append(stokes)
+            labels.append(final_label)
+            cprs.append(float(cpr.mean()))
+            dops.append(float(dop.mean()))
+
+    stokes_arr = np.stack(patches).astype(np.float32)
+    labels_arr = np.array(labels, dtype=np.int64)
+    cpr_arr    = np.array(cprs, dtype=np.float32)
+    dop_arr    = np.array(dops, dtype=np.float32)
+
+    # Save
+    np.save(os.path.join(save_dir, "stokes.npy"), stokes_arr)
+    np.save(os.path.join(save_dir, "labels.npy"), labels_arr)
+    np.save(os.path.join(save_dir, "cpr.npy"), cpr_arr)
+    np.save(os.path.join(save_dir, "dop.npy"), dop_arr)
+
+    meta = {
+        "n_samples": n_samples,
+        "patch_size": patch_size,
+        "class_distribution": {
+            "ice": int((labels_arr == 1).sum()),
+            "rock": int((labels_arr == 2).sum()),
+            "regolith": int((labels_arr == 0).sum()),
+        },
+        "physics": {
+            "cpr_ice_threshold": 1.0,
+            "dop_ice_threshold": 0.13,
+            "l_band_wavelength_cm": 24.0,
+            "s_band_wavelength_cm": 10.0,
+        },
+    }
+    with open(os.path.join(save_dir, "metadata.json"), "w") as f:
+        json.dump(meta, f, indent=2)
+
+    print(f"[DataGen] Generated {n_samples} samples → {save_dir}")
+    print(f"  Ice: {meta['class_distribution']['ice']}")
+    print(f"  Rock: {meta['class_distribution']['rock']}")
+    print(f"  Regolith: {meta['class_distribution']['regolith']}")
+    return {"stokes": stokes_arr, "labels": labels_arr, "cpr": cpr_arr,
+            "dop": dop_arr, "metadata": meta}
+
 
 if __name__ == "__main__":
-    create_synthetic_dataset("data")
+    generate_dataset(n_samples=2000, patch_size=64, save_dir="data/synthetic")

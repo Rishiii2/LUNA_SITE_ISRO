@@ -1,69 +1,106 @@
+"""
+LUNA-SITE | PyTorch DataLoader for DFSAR Stokes Tensors
+=========================================================
+Implements weak-supervised labeling: pixels are labelled 'Ice'
+if they satisfy the physics gate (CPR > 1.0 AND DOP < 0.13),
+so no human-annotated ground truth is required.
+"""
+
 import os
-import glob
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 
-class LunarIceDataset(Dataset):
-    def __init__(self, data_dir):
-        """
-        Custom PyTorch Dataset for loading PRADAN DFSAR and LOLA DEM data.
-        """
-        self.data_dir = data_dir
-        self.dfsar_files = sorted(glob.glob(os.path.join(data_dir, 'dfsar_tile_*.npy')))
-        self.lola_files = sorted(glob.glob(os.path.join(data_dir, 'lola_tile_*.npy')))
-        
-        assert len(self.dfsar_files) == len(self.lola_files), "Mismatch between DFSAR and LOLA tiles!"
+from generate_synthetic_isro_data import generate_dataset
+
+
+class LunarDFSARDataset(Dataset):
+    """
+    PyTorch Dataset for 4-channel DFSAR Stokes patches.
+
+    Weak-supervised labeling override: even if a patch is generated
+    as 'regolith', if its CPR/DOP values satisfy the ice physics gate,
+    the label is promoted to Ice (class 1). This removes the need for
+    hand-labeled ground truth — critical for a real ISRO dataset.
+    """
+
+    def __init__(
+        self,
+        data_dir:    str   = "data/synthetic",
+        augment:     bool  = True,
+        cpr_thresh:  float = 1.0,
+        dop_thresh:  float = 0.13,
+    ):
+        self.augment    = augment
+        self.cpr_thresh = cpr_thresh
+        self.dop_thresh = dop_thresh
+
+        # Load
+        self.stokes = np.load(os.path.join(data_dir, "stokes.npy"))
+        self.labels = np.load(os.path.join(data_dir, "labels.npy"))
+        self.cpr    = np.load(os.path.join(data_dir, "cpr.npy"))
+        self.dop    = np.load(os.path.join(data_dir, "dop.npy"))
+
+        # Weak labeling override
+        ice_gate = (self.cpr > self.cpr_thresh) & (self.dop < self.dop_thresh)
+        self.labels = np.where(ice_gate, 1, self.labels).astype(np.int64)
+
+        # Normalize each channel to [0, 1]
+        for c in range(4):
+            ch = self.stokes[:, c]
+            vmin, vmax = ch.min(), ch.max()
+            if vmax > vmin:
+                self.stokes[:, c] = (ch - vmin) / (vmax - vmin)
 
     def __len__(self):
-        return len(self.dfsar_files)
-
-    def _generate_proxy_label(self, stokes_tensor, lola_tensor):
-        """
-        Weakly-Supervised Label Generation.
-        Since we have no ground truth ice labels, we generate a proxy label 
-        based on the Physics of radar:
-        CPR > 1.0 AND DOP < 0.13 AND inside PSR.
-        """
-        s1, s2, s3, s4 = stokes_tensor[0], stokes_tensor[1], stokes_tensor[2], stokes_tensor[3]
-        
-        # Avoid division by zero
-        s1_safe = np.where(s1 == 0, 1e-6, s1)
-        s1_plus_s4 = np.where((s1 + s4) == 0, 1e-6, s1 + s4)
-        
-        cpr = (s1 - s4) / s1_plus_s4
-        dop = np.sqrt(s2**2 + s3**2 + s4**2) / s1_safe
-        
-        psr_mask = lola_tensor[1] # 1 is Dark, 0 is Sunlit
-        
-        # Generate 64x64 binary label mask
-        ice_mask = (cpr > 1.0) & (dop < 0.13) & (psr_mask == 1.0)
-        
-        # Return a single value for the whole tile (1 if significant ice is found, else 0)
-        tile_label = 1.0 if np.sum(ice_mask) > (0.1 * 64 * 64) else 0.0
-        return np.array([tile_label], dtype=np.float32)
+        return len(self.labels)
 
     def __getitem__(self, idx):
-        # Load arrays
-        stokes_tensor = np.load(self.dfsar_files[idx])
-        lola_tensor = np.load(self.lola_files[idx])
-        
-        # Generate weak labels based on CPR/DOP
-        label = self._generate_proxy_label(stokes_tensor, lola_tensor)
-        
-        # Extract features for CNN (Just Stokes vector for now)
-        features = torch.tensor(stokes_tensor, dtype=torch.float32)
-        target = torch.tensor(label, dtype=torch.float32)
-        
-        return features, target
+        stokes = self.stokes[idx].copy()  # (4, H, W)
+        label  = int(self.labels[idx])
+        cpr    = float(self.cpr[idx])
+        dop    = float(self.dop[idx])
 
-def get_dataloader(data_dir, batch_size=16):
-    dataset = LunarIceDataset(data_dir)
-    return DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        if self.augment:
+            # Random horizontal/vertical flip
+            if np.random.rand() > 0.5:
+                stokes = stokes[:, :, ::-1].copy()
+            if np.random.rand() > 0.5:
+                stokes = stokes[:, ::-1, :].copy()
+            # Random 90-degree rotation
+            k = np.random.randint(0, 4)
+            stokes = np.rot90(stokes, k=k, axes=(1, 2)).copy()
+            # Small Gaussian noise
+            stokes += np.random.normal(0, 0.005, stokes.shape).astype(np.float32)
+            stokes = np.clip(stokes, 0.0, 1.0)
+
+        return {
+            "stokes": torch.tensor(stokes, dtype=torch.float32),
+            "label":  torch.tensor(label,  dtype=torch.long),
+            "cpr":    torch.tensor(cpr,    dtype=torch.float32),
+            "dop":    torch.tensor(dop,    dtype=torch.float32),
+        }
+
+
+def generate_and_load_dataset(
+    data_dir: str = "data/synthetic",
+    n_samples: int = 2000,
+    force_regen: bool = False,
+) -> LunarDFSARDataset:
+    """Generate synthetic data if not present, then return Dataset."""
+    stokes_path = os.path.join(data_dir, "stokes.npy")
+    if not os.path.exists(stokes_path) or force_regen:
+        generate_dataset(n_samples=n_samples, save_dir=data_dir)
+    return LunarDFSARDataset(data_dir=data_dir)
+
 
 if __name__ == "__main__":
-    print("[Layer 0] Testing LunarIceDataset PyTorch DataLoader...")
-    loader = get_dataloader("data", batch_size=4)
-    features, targets = next(iter(loader))
-    print(f"Features Batch Shape: {features.shape} (Batch, Channels, H, W)")
-    print(f"Targets Batch Shape: {targets.shape} (Batch, Label)")
+    ds = generate_and_load_dataset()
+    sample = ds[0]
+    print(f"Dataset size: {len(ds)}")
+    print(f"Stokes shape: {sample['stokes'].shape}")
+    print(f"Label: {sample['label'].item()} | CPR: {sample['cpr']:.3f} | DOP: {sample['dop']:.3f}")
+    classes, counts = np.unique(ds.labels, return_counts=True)
+    for c, n in zip(classes, counts):
+        names = {0: "Regolith", 1: "Ice", 2: "Rock"}
+        print(f"  {names[c]}: {n} ({100*n/len(ds):.1f}%)")
