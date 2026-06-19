@@ -28,8 +28,8 @@ def _ice_patch(size: tuple, strength: float = 1.0) -> np.ndarray:
     stokes = np.zeros((4, H, W), dtype=np.float32)
     # S1: moderate total power
     stokes[0] = np.random.normal(0.6 * strength, 0.05, (H, W)).clip(0.1, 1.5)
-    # S4: high same-sense => CPR > 1
-    stokes[3] = stokes[0] * np.random.uniform(0.55, 0.70, (H, W))
+    # S4: Must be negative for CPR (SC/OC) to exceed 1.0 (indicating strong same-sense SC power)
+    stokes[3] = -stokes[0] * np.random.uniform(0.55, 0.70, (H, W))
     # S2, S3: small (depolarised => low DOP)
     stokes[1] = np.random.normal(0.02, 0.005, (H, W))
     stokes[2] = np.random.normal(0.02, 0.005, (H, W))
@@ -63,7 +63,9 @@ def compute_cpr_dop(stokes: np.ndarray):
     """Compute CPR and DOP from 4-channel Stokes array."""
     S1, S2, S3, S4 = stokes[0], stokes[1], stokes[2], stokes[3]
     eps = 1e-8
-    cpr = (S1 - S4) / (S1 + S4 + eps)
+    SC = (S1 - S4) / 2.0
+    OC = (S1 + S4) / 2.0
+    cpr = SC / (OC + eps)
     dop = np.sqrt(S2**2 + S3**2 + S4**2) / (S1 + eps)
     return cpr, dop
 
@@ -71,7 +73,7 @@ def compute_cpr_dop(stokes: np.ndarray):
 def generate_dataset(
     n_samples: int = 2000,
     patch_size: int = 64,
-    save_dir: str = "data/synthetic",
+    save_dir: str = "data",
     class_weights: tuple = (0.35, 0.35, 0.30),  # ice, rock, regolith
 ) -> dict:
     """
@@ -91,7 +93,7 @@ def generate_dataset(
     patches, labels, cprs, dops = [], [], [], []
 
     generators = [
-        (_ice_patch,      n_ice,      0),  # label 1
+        (_ice_patch,      n_ice,      1),  # label 1 for ice
         (_rock_patch,     n_rock,     2),  # label 2
         (_regolith_patch, n_regolith, 0),  # label 0
     ]

@@ -25,6 +25,12 @@ LUNA-SITE's baseline detection algorithms are validated against NASA mini-RF and
 
 LUNA-SITE operates on a shared data contract tied to the **South Polar Stereographic Projection (EPSG:3031)**.
 
+### 📌 Project Scope & Implementation Status
+To ensure transparency for the Hackathon review:
+- **✅ Fully Implemented (Core Contributions):** Layer 3 (Radar Physics CPR/DOP Maps), Layer 8 (Physics-Regularized CNN Loss), Layer 15 (NSGA-II Multi-Objective Optimizer), Layer 17 (Energy-Aware RRT* planner), Layer 19 (Streamlit Mission Control).
+- **🧪 Synthetic / Mock Demo:** Layer 0 ISRO PDS4 parsing (mocked via `pds4_tools` interface), synthetic DFSAR tensor generation to simulate Faustini crater physics.
+- **🚀 Future Integration:** Full ROS2/Gazebo integration and live ISRO payload data streaming.
+
 ```mermaid
 graph TD;
     A[ISRO DFSAR PDS4 Data] --> B[Phase 1: Radar Physics]

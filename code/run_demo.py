@@ -45,6 +45,7 @@ def run_end_to_end_demo():
     # Phase 2: CNN Inference (Mock run)
     logging.info("[Layer 8] Initializing Physics-Informed CNN (PINN) for Deep Inference")
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    logging.info(f"          -> Running on device: {device}")
     model = LunarIceCNN().to(device)
     model.eval()
     with torch.no_grad():

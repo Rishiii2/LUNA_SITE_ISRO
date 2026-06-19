@@ -30,14 +30,16 @@ ROUGHNESS_MAX_SIGMA  = 0.30   # RMS height (m) above which rough-rock rejection 
 def compute_cpr(stokes: np.ndarray) -> np.ndarray:
     """
     Circular Polarization Ratio from 4-channel Stokes.
-    CPR = (S1 - S4) / (S1 + S4)
+    Standard definition: CPR = SC / OC (Same-Sense / Opposite-Sense power)
 
     Ice causes same-sense backscatter (volumetric), raising CPR > 1.
     Rock causes surface scatter, CPR ≈ 0.4-0.8.
     """
     S1, S4 = stokes[0], stokes[3]
     eps = 1e-8
-    return (S1 - S4) / (S1 + S4 + eps)
+    SC = (S1 - S4) / 2.0
+    OC = (S1 + S4) / 2.0
+    return SC / (OC + eps)
 
 
 def compute_dop(stokes: np.ndarray) -> np.ndarray:

@@ -90,8 +90,9 @@ def generate_pareto_front():
     ax.plot(np.sort(pareto_x), np.sort(pareto_y)[::-1], color='#00ffcc', linestyle='--', alpha=0.8)
     
     # Annotate the best site
+    idx = len(pareto_x) // 2
     ax.annotate('Selected Landing Site (Mons Mouton #3)', 
-                xy=(pareto_x[7], pareto_y[7]), xytext=(pareto_x[7]+10, pareto_y[7]+10),
+                xy=(pareto_x[idx], pareto_y[idx]), xytext=(pareto_x[idx]+10, pareto_y[idx]+10),
                 arrowprops=dict(facecolor='white', shrink=0.05), color='white')
     
     ax.set_xlabel("Traverse Hazard Score (Lower is Better)", color='white')

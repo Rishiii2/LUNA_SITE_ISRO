@@ -26,7 +26,7 @@ class LunarDFSARDataset(Dataset):
 
     def __init__(
         self,
-        data_dir:    str   = "data/synthetic",
+        data_dir:    str   = "data",
         augment:     bool  = True,
         cpr_thresh:  float = 1.0,
         dop_thresh:  float = 0.13,
@@ -83,7 +83,7 @@ class LunarDFSARDataset(Dataset):
 
 
 def generate_and_load_dataset(
-    data_dir: str = "data/synthetic",
+    data_dir: str = "data",
     n_samples: int = 2000,
     force_regen: bool = False,
 ) -> LunarDFSARDataset:

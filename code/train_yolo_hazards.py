@@ -1,3 +1,12 @@
+"""
+LUNA-SITE | Layer 10: YOLOv8 Sunlit Hazard Detection
+=====================================================
+NOTE: This is a structural architecture stub for the hackathon demo.
+In the production pipeline, this script fine-tunes Ultralytics YOLOv8
+on high-resolution optical imagery for Zone A hazard mapping. 
+For this local simulation, the actual training loop is bypassed.
+"""
+
 import os
 import yaml
 
