@@ -16,7 +16,7 @@ import numpy as np
 import logging
 import torch
 
-from generate_synthetic_isro_data import create_synthetic_dataset
+from generate_synthetic_isro_data import generate_dataset
 from cpr_dop_mapper import compute_cpr_dop
 from nsga2_optimizer import generate_candidate_sites, run_nsga2
 from rrt_star_planner import LunarCostMap, EnergyAwareRRTStar
@@ -31,10 +31,11 @@ def run_end_to_end_demo():
 
     # Phase 1: Data Parsing & Physics
     logging.info("[Layer 0] Initializing ISRO PDS4 Data Parser (pds4_tools)")
-    create_synthetic_dataset("data", num_samples=10)
+    generate_dataset(n_samples=10, save_dir="data")
     
     # Load first sample
-    sample_stokes = np.load("data/dfsar_tile_0.npy")
+    stokes_arr = np.load("data/stokes.npy")
+    sample_stokes = stokes_arr[0]
     logging.info(f"[Layer 1-2] Loaded Stokes Tensor for Faustini Crater: {sample_stokes.shape}")
     
     logging.info("[Layer 3] Computing CPR and DOP Physics Maps")
