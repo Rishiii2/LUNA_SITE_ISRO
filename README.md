@@ -33,11 +33,32 @@ To ensure transparency for the Hackathon review:
 
 ```mermaid
 graph TD;
-    A[ISRO DFSAR PDS4 Data] --> B[Phase 1: Radar Physics]
-    B --> C(Phase 2: PINN + Explainable AI)
-    C --> D{Phase 3: Hazard & Terrain Maps}
-    D --> E[Phase 4: NSGA-II Landing Optimization]
-    E --> F((Phase 5: ROS2 Digital Twin))
+    sublayer0[Layer 0: PDS4 Parsing & EPSG:3031 Reprojection]
+    sublayer0 --> Phase1
+    
+    subgraph Phase 1: Radar Physics & Ice Detection
+    A[Raw DFSAR Stokes Vectors] --> B[m-chi Polarimetric Decomposition]
+    B --> C{Volume Scattering V > 0.4?}
+    C -- Yes --> D[5-ch PINN CNN Inference]
+    D --> E[MC Dropout Uncertainty]
+    end
+    
+    subgraph Phase 2: Dual-Zone Hazard Mapping
+    F[Optical YOLOv8] -->|Sunlit Zone Only| H[Hazard Map]
+    G[LOLA DEM Roughness] -->|Dark PSR Zone| H
+    end
+    
+    subgraph Phase 3: Multi-Objective Optimization
+    D & H & I[Solar SPICE] --> J[NSGA-II Dense Grid Scan]
+    J --> K[Pareto Front Generation]
+    K --> L[AHP-TOPSIS Ranking]
+    end
+    
+    subgraph Phase 4/5: Traversal & Digital Twin
+    L --> M[Bekker Energy-Aware RRT*]
+    M --> N[ROS2 Local DWA]
+    N --> O((Streamlit Dashboard / Gazebo))
+    end
 ```
 
 ### Phase 1: PSR & Radar Ice Detection
