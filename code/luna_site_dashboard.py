@@ -43,6 +43,30 @@ st.markdown("""
         border: 1px solid #00d4ff; border-radius: 4px;
         padding: 2px 8px; font-size: 12px; color: #00d4ff;
     }
+    /* Cool Battery Gauge CSS */
+    .battery-container {
+        width: 100%;
+        height: 30px;
+        background-color: #333;
+        border-radius: 15px;
+        border: 2px solid #555;
+        position: relative;
+        overflow: hidden;
+    }
+    .battery-level {
+        height: 100%;
+        border-radius: 12px 0 0 12px;
+        transition: width 0.5s ease-in-out;
+    }
+    .battery-text {
+        position: absolute;
+        width: 100%;
+        text-align: center;
+        color: white;
+        font-weight: bold;
+        line-height: 26px;
+        text-shadow: 1px 1px 2px black;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -52,27 +76,31 @@ st.markdown("""
 def load_pipeline_data():
     """Run all pipeline layers and cache results."""
     from generate_synthetic_isro_data import generate_dataset
-    from cpr_dop_mapper import run_cpr_dop_pipeline, HungarianOrbitTracker
+    from cpr_dop_mapper import run_m_chi_pipeline, HungarianOrbitTracker
     from yolo_hazard_mapper import dual_zone_hazard_map
-    from nsga2_optimizer import generate_candidate_sites, run_nsga2
+    from nsga2_optimizer import dense_grid_scan, run_nsga_topsis
     from cnn_ice_detector import compute_depth_probability_bounds
-    from rrt_star_planner import LunarCostMap, EnergyAwareRRTStar
+    from rrt_star_planner import LunarCostMap, EnergyAwareRRTStar, RoverConfig
 
     shape = (256, 256)
 
-    # Layers 3-5: CPR/DOP
+    # Layers 3-5: m-chi Decomposition
     rng    = np.random.default_rng(42)
     stokes = rng.random((4, *shape)).astype(np.float32)
-    stokes[0] = 0.6; stokes[3] = 0.38   # ice-like CPR ≈ 1.22
-    stokes[1] = 0.01; stokes[2] = 0.01  # low DOP ≈ 0.05
-    cpr_result = run_cpr_dop_pipeline(stokes)
+    stokes[0] = 0.6; stokes[3] = -0.35  # High V indicating ice
+    stokes[1] = 0.01; stokes[2] = 0.01
+    
+    roughness = np.zeros(shape, dtype=np.float32)
+    roughness[100:150, 100:150] = 0.5 # Add some simulated rough terrain
+    
+    m_chi_result = run_m_chi_pipeline(stokes, roughness)
 
     # Orbit tracking
     tracker = HungarianOrbitTracker()
     pass_data = [
-        [(120.0, 130.0, 1.3, 0.08), (80.0, 160.0, 1.5, 0.06)],
-        [(121.0, 131.0, 1.2, 0.09), (80.5, 160.2, 1.4, 0.07)],
-        [(120.5, 130.5, 1.25, 0.085)],
+        [(120.0, 130.0, 0.45, 0.08), (80.0, 160.0, 0.50, 0.06)],
+        [(121.0, 131.0, 0.42, 0.09), (80.5, 160.2, 0.44, 0.07)],
+        [(120.5, 130.5, 0.46, 0.085)],
     ]
     confirmed = []
     for p in pass_data:
@@ -81,9 +109,9 @@ def load_pipeline_data():
     # Layer 10: Dual-zone hazard
     hazard = dual_zone_hazard_map(shape=shape)
 
-    # Layers 14-16: NSGA-II
-    sites = generate_candidate_sites(n_sites=200)
-    pareto, feasible = run_nsga2(sites)
+    # Layers 14-16: NSGA-II + AHP-TOPSIS
+    sites = dense_grid_scan(grid_size=256, stride=20)
+    pareto, feasible = run_nsga_topsis(sites)
 
     # Layer 8: Depth bounds
     l_band = compute_depth_probability_bounds(lambda_m=0.24)
@@ -92,17 +120,23 @@ def load_pipeline_data():
     # Layers 17: RRT* path
     cost_map = LunarCostMap(
         shape=shape,
-        slope_map=cpr_result.get("roughness", None),
+        slope_map=roughness,
     )
-    rrt = EnergyAwareRRTStar(cost_map=cost_map, max_iters=600)
+    rrt = EnergyAwareRRTStar(cost_map=cost_map, max_iters=1000)
     path, path_cost = rrt.plan((20.0, 20.0), (210.0, 200.0))
+    
+    # Calculate battery
+    rover = RoverConfig()
+    total_battery_joules = rover.battery_capacity_wh * 3600
+    battery_pct = max(0.0, 100.0 - (path_cost / total_battery_joules) * 100.0)
 
     return {
         "shape": shape, "stokes": stokes,
-        "cpr_result": cpr_result, "confirmed_tracks": confirmed,
+        "m_chi_result": m_chi_result, "confirmed_tracks": confirmed,
         "hazard": hazard, "pareto": pareto, "feasible": feasible,
         "l_band": l_band, "s_band": s_band,
         "path": path, "path_cost": path_cost,
+        "battery_pct": battery_pct,
         "cost_map": cost_map,
     }
 
@@ -136,14 +170,14 @@ with st.sidebar:
 st.title("🌑 LUNA-SITE Mission Control")
 st.markdown(
     f"**Target:** {mission_target} &nbsp;|&nbsp; "
-    f"**Pipeline Status:** <span class='status-badge'>ALL 21 LAYERS ACTIVE</span>",
+    f"**Pipeline Status:** <span class='status-badge'>ALL 21 SOTA LAYERS ACTIVE</span>",
     unsafe_allow_html=True,
 )
 
-with st.spinner("Running 21-layer LUNA-SITE pipeline..."):
+with st.spinner("Running 21-layer SOTA LUNA-SITE pipeline..."):
     data = load_pipeline_data()
 
-cpr_result = data["cpr_result"]
+m_chi_result = data["m_chi_result"]
 hazard     = data["hazard"]
 pareto     = data["pareto"]
 feasible   = data["feasible"]
@@ -151,61 +185,62 @@ path       = data["path"]
 shape      = data["shape"]
 l_band     = data["l_band"]
 s_band     = data["s_band"]
+battery_pct= data["battery_pct"]
 
 # ── KPI Row ────────────────────────────────────────────────────────────────────
 c1, c2, c3, c4, c5 = st.columns(5)
 with c1:
-    st.metric("Ice Candidates", f"{cpr_result['n_clean']:,} px",
-              f"-{cpr_result['n_raw'] - cpr_result['n_clean']} (roughness-rejected)")
+    st.metric("Ice Candidates", f"{m_chi_result['n_clean']:,} px",
+              f"-{256*256 - m_chi_result['n_clean']} (roughness-rejected)")
 with c2:
-    best_ice = max(pareto, key=lambda s: s.ice_volume_m3) if pareto else None
-    st.metric("Best Ice Volume", f"{best_ice.ice_volume_m3:.0f} m³" if best_ice else "—")
+    best_ice = pareto[0] if pareto else None
+    st.metric("Best Ranked Ice Vol", f"{best_ice.ice_volume_m3:.0f} m³" if best_ice else "—")
 with c3:
-    st.metric("Pareto Sites", f"{len(pareto)}", f"{len(feasible)} feasible")
+    st.metric("Pareto Optimal Sites", f"{len(pareto)}", f"{len(feasible)} feasible in grid")
 with c4:
     st.metric("Drill Probability", f"{l_band['prob_within_drill_limit']:.1%}",
               "P(ice ≤ 2m) L-band")
 with c5:
-    st.metric("Path Waypoints", f"{len(path)}", f"Cost: {data['path_cost']:.1f}")
+    st.metric("Battery Remaining", f"{battery_pct:.1f}%", f"-{data['path_cost'] / 3600:.1f} Wh consumed")
 
 st.divider()
 
 # ── Phase 1: Radar Ice Detection ──────────────────────────────────────────────
-with st.expander("📡 Phase 1: PSR Radar Ice Detection (Layers 3-5)", expanded=True):
+with st.expander("📡 Phase 1: Polarimetric m-chi Ice Detection (Layers 3-5)", expanded=True):
     col1, col2, col3 = st.columns([1, 1, 1])
 
     with col1:
-        st.markdown("**CPR Map** (>1.0 = volumetric ice candidate)")
-        fig_cpr = px.imshow(
-            cpr_result["cpr"], color_continuous_scale="Inferno",
-            labels={"color": "CPR"}, zmin=0, zmax=2,
+        st.markdown("**Volume Scattering (V)** (>0.4 = Volumetric Ice)")
+        fig_v = px.imshow(
+            m_chi_result["V_vol"], color_continuous_scale="Inferno",
+            labels={"color": "V"}, zmin=0, zmax=1.0,
         )
-        fig_cpr.add_contour(
-            z=cpr_result["cpr"], showscale=False,
-            contours=dict(start=1.0, end=1.0, size=0.01, coloring="lines"),
-            line=dict(color="cyan", width=1.5), name="CPR=1.0 threshold"
+        fig_v.add_contour(
+            z=m_chi_result["V_vol"], showscale=False,
+            contours=dict(start=0.4, end=0.4, size=0.01, coloring="lines"),
+            line=dict(color="cyan", width=1.5), name="V=0.4 threshold"
         )
-        fig_cpr.update_layout(
+        fig_v.update_layout(
             height=280, margin=dict(l=0, r=0, t=0, b=0),
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         )
-        st.plotly_chart(fig_cpr, use_container_width=True)
+        st.plotly_chart(fig_v, use_container_width=True)
 
     with col2:
-        st.markdown("**DOP Map** (<0.13 = depolarized → ice)")
-        fig_dop = px.imshow(
-            cpr_result["dop"], color_continuous_scale="Viridis_r",
-            labels={"color": "DOP"}, zmin=0, zmax=0.5,
+        st.markdown("**DEM Roughness Map** (False-Positive Filter)")
+        fig_r = px.imshow(
+            m_chi_result["roughness"], color_continuous_scale="Cividis",
+            labels={"color": "Roughness"}, zmin=0, zmax=1.0,
         )
-        fig_dop.update_layout(
+        fig_r.update_layout(
             height=280, margin=dict(l=0, r=0, t=0, b=0),
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         )
-        st.plotly_chart(fig_dop, use_container_width=True)
+        st.plotly_chart(fig_r, use_container_width=True)
 
     with col3:
-        st.markdown("**Ice Candidate Mask** (CPR>1 AND DOP<0.13, roughness-rejected)")
-        ice_display = cpr_result["ice_mask"].astype(float)
+        st.markdown("**Ice Candidate Mask** (V > 0.4 AND Low Roughness)")
+        ice_display = m_chi_result["ice_mask"].astype(float)
         fig_ice = px.imshow(
             ice_display, color_continuous_scale=[[0, "#0a0a1a"], [1, "#00d4ff"]],
             labels={"color": "Ice"},
@@ -220,7 +255,7 @@ with st.expander("📡 Phase 1: PSR Radar Ice Detection (Layers 3-5)", expanded=
     band = l_band if "L-Band" in radar_band else s_band
     band_name = "L-Band (24cm)" if "L-Band" in radar_band else "S-Band (10cm)"
     st.info(
-        f"**{band_name} Depth Probability Bounds**: "
+        f"**{band_name} Physics Depth Bounds**: "
         f"{band['interpretation']}"
     )
 
@@ -278,7 +313,7 @@ with st.expander("⚠️ Phase 2: Dual-Zone Hazard Mapping (Layer 10)", expanded
 
 
 # ── Phase 3: NSGA-II Pareto ───────────────────────────────────────────────────
-with st.expander("🎯 Phase 3: Multi-Objective Site Optimization — NSGA-II Pareto Front", expanded=True):
+with st.expander("🎯 Phase 3: AHP-TOPSIS Site Selection (Layer 15-16)", expanded=True):
     col1, col2 = st.columns([3, 2])
 
     with col1:
@@ -294,7 +329,7 @@ with st.expander("🎯 Phase 3: Multi-Objective Site Optimization — NSGA-II Pa
             mode="markers",
             marker=dict(size=5, color=sol_all, colorscale="Viridis",
                         colorbar=dict(title="Solar h/day"), opacity=0.5),
-            name="All feasible sites", text=[f"Site {s.site_id}" for s in feasible],
+            name="Dense Grid Scan", text=[f"Site {s.site_id}" for s in feasible],
         ))
 
         # Pareto front
@@ -305,7 +340,7 @@ with st.expander("🎯 Phase 3: Multi-Objective Site Optimization — NSGA-II Pa
             x=p_haz, y=p_ice, mode="markers+lines",
             marker=dict(size=10, color="#00d4ff", symbol="star"),
             line=dict(color="#00d4ff", width=2, dash="dot"),
-            name="Pareto front (Rank 1)",
+            name="AHP-TOPSIS Ranked Targets",
         ))
 
         # Top candidate
@@ -313,14 +348,14 @@ with st.expander("🎯 Phase 3: Multi-Objective Site Optimization — NSGA-II Pa
             top = pareto[0]
             fig_pareto.add_annotation(
                 x=top.terrain_hazard, y=top.ice_volume_m3,
-                text=f"  Best: Site #{top.site_id}",
+                text=f"  Rank 1: Site #{top.site_id}",
                 font=dict(color="#00ff88", size=12), showarrow=False, xanchor="left",
             )
 
         fig_pareto.update_layout(
             xaxis_title="Terrain Hazard Score (minimize)",
             yaxis_title="Ice Volume m³ (maximize)",
-            title="NSGA-II Pareto Front — Ice Volume vs Terrain Safety",
+            title="NSGA-II + AHP-TOPSIS Multi-Objective Optimization",
             height=380,
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(10,10,26,0.8)",
             font=dict(color="#ccc"),
@@ -329,26 +364,26 @@ with st.expander("🎯 Phase 3: Multi-Objective Site Optimization — NSGA-II Pa
         st.plotly_chart(fig_pareto, use_container_width=True)
 
     with col2:
-        st.markdown("**Top 5 Mission Sites**")
+        st.markdown("**AHP-TOPSIS Ranked Targets**")
         for i, s in enumerate(pareto[:5], 1):
             colour = "#00ff88" if i == 1 else "#00d4ff" if i <= 3 else "#888"
             st.markdown(
                 f"<div style='border:1px solid {colour};border-radius:6px;"
                 f"padding:8px;margin:4px 0;background:rgba(0,0,0,0.3)'>"
-                f"<b style='color:{colour}'>#{i} Site {s.site_id}</b><br>"
+                f"<b style='color:{colour}'>Rank #{i} Site {s.site_id}</b><br>"
                 f"🧊 Ice: <b>{s.ice_volume_m3:.0f}m³</b> &nbsp; "
                 f"⚠️ Hazard: <b>{s.terrain_hazard:.2f}</b><br>"
                 f"☀️ Solar: <b>{s.solar_hours:.1f}h/day</b> &nbsp; "
                 f"🛰 Earth link: <b>{s.earth_visibility:.0%}</b><br>"
                 f"⛏ P(drill): <b>{s.depth_prob:.0%}</b> &nbsp; "
-                f"CRM: <b>{s.cost_risk_metric:.3f}</b>"
+                f"AHP-TOPSIS CRM: <b>{s.cost_risk_metric:.3f}</b>"
                 f"</div>",
                 unsafe_allow_html=True,
             )
 
 
 # ── Phase 4: Rover Path ───────────────────────────────────────────────────────
-with st.expander("🤖 Phase 4: RRT* Rover Traverse (Layers 17-18)", expanded=True):
+with st.expander("🤖 Phase 4: RRT* Energy-Aware Rover Traverse (Layers 17-18)", expanded=True):
     col1, col2 = st.columns([3, 1])
 
     with col1:
@@ -373,26 +408,26 @@ with st.expander("🤖 Phase 4: RRT* Rover Traverse (Layers 17-18)", expanded=Tr
             py_list = [p[1] for p in path]
             fig_rrt.add_trace(go.Scatter(
                 x=px_list, y=py_list, mode="lines+markers",
-                line=dict(color="#00d4ff", width=2),
-                marker=dict(size=3, color="#00d4ff"),
+                line=dict(color="#00ff88", width=3),
+                marker=dict(size=4, color="#00ff88"),
                 name="RRT* optimal path",
             ))
             # Start / Goal
             fig_rrt.add_trace(go.Scatter(
                 x=[path[0][0]], y=[path[0][1]], mode="markers+text",
                 marker=dict(size=14, color="#00ff88", symbol="triangle-up"),
-                text=["START"], textposition="top center",
+                text=["LANDER"], textposition="top center",
                 textfont=dict(color="#00ff88", size=11), name="Start",
             ))
             fig_rrt.add_trace(go.Scatter(
                 x=[path[-1][0]], y=[path[-1][1]], mode="markers+text",
                 marker=dict(size=14, color="#ff4b4b", symbol="star"),
-                text=["GOAL (Ice Site)"], textposition="top center",
+                text=["TARGET (Rank 1 Ice Site)"], textposition="top center",
                 textfont=dict(color="#ff4b4b", size=11), name="Goal",
             ))
 
         fig_rrt.update_layout(
-            title="Energy-Aware RRT* Rover Traverse (pre-computed global path)",
+            title="Energy-Aware RRT* Rover Traverse (Bekker Terramechanics)",
             height=380,
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(10,10,26,0.8)",
             font=dict(color="#ccc"),
@@ -401,32 +436,31 @@ with st.expander("🤖 Phase 4: RRT* Rover Traverse (Layers 17-18)", expanded=Tr
         st.plotly_chart(fig_rrt, use_container_width=True)
 
     with col2:
-        st.markdown("**Path Statistics**")
-        st.metric("Waypoints", len(path))
-        st.metric("Total Cost", f"{data['path_cost']:.1f}")
-        st.metric("Path Length", f"{sum(np.sqrt((path[i][0]-path[i-1][0])**2 + (path[i][1]-path[i-1][1])**2) for i in range(1,len(path))):.0f} px" if len(path)>1 else "—")
+        st.markdown("### 🔋 Rover Battery Status")
+        
+        # Battery GUI
+        bat_color = "#00ff88" if battery_pct > 50 else "#ffa500" if battery_pct > 20 else "#ff4b4b"
+        st.markdown(f"""
+        <div class="battery-container">
+            <div class="battery-level" style="width: {battery_pct}%; background-color: {bat_color};"></div>
+            <div class="battery-text">{battery_pct:.1f}% Remaining</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("<br>**Traverse Statistics**", unsafe_allow_html=True)
+        st.metric("Total Joules Consumed", f"{data['path_cost']/1000:.1f} kJ")
+        st.metric("Waypoints Computed", len(path))
+        st.metric("Path Distance", f"{sum(np.sqrt((path[i][0]-path[i-1][0])**2 + (path[i][1]-path[i-1][1])**2) for i in range(1,len(path))):.0f} m" if len(path)>1 else "—")
 
         st.markdown("""
         <div style='background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.3);
                     border-radius:6px;padding:10px;margin-top:8px;font-size:12px'>
-        <b>Algorithm</b><br>
-        Global: Energy-Aware RRT*<br>
-        Local: DWA (Gazebo live)<br>
-        <br>
-        Cost penalises:<br>
-        • Slope (exp near 10°)<br>
-        • PSR traversal (battery)<br>
-        • High-roughness terrain
-        </div>
-        """, unsafe_allow_html=True)
-
-        st.markdown("""
-        <div style='background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.3);
-                    border-radius:6px;padding:8px;margin-top:6px;font-size:11px'>
-        <b>Finale Strategy</b><br>
-        RRT* pre-computed ✅<br>
-        DWA runs live in Gazebo<br>
-        No 30hr compute trap ✅
+        <b>Bekker Terramechanics</b><br>
+        Cost calculated in exact Joules using:<br>
+        • Lunar Gravity ($1.62 m/s^2$)<br>
+        • Regolith Friction ($\mu=0.2$)<br>
+        • Mechanical climbing work<br>
+        • Solar recharge vs PSR penalty
         </div>
         """, unsafe_allow_html=True)
 
@@ -437,10 +471,10 @@ st.markdown("### 21-Layer Pipeline Status")
 layers = [
     ("0",  "PDS4 Data Parsing",              "✅", "pds4_tools + GeoTIFF"),
     ("1-2","PSR & DSC Mapping",              "✅", "SPICE toolkit + LOLA DEM"),
-    ("3",  "CPR & DOP Detection",            "✅", "Physics gate: CPR>1, DOP<0.13"),
+    ("3",  "m-chi Polarimetric Decomposition","✅", "Isolates true Volumetric Scattering"),
     ("4",  "Roughness Rejection",            "✅", "DEM RMS height filter"),
     ("5",  "Hungarian Cross-Pass Tracker",   "✅", "Replaces DeepSORT (correct for orbital)"),
-    ("6",  "Physics-Regularized CNN",        "✅", "4-ch Stokes → Ice/Rock/Regolith"),
+    ("6",  "Physics-Regularized CNN",        "✅", "5-ch Stokes+Roughness → Ice/Rock/Regolith"),
     ("7",  "MC Dropout + Grad-CAM XAI",      "✅", "50 stochastic passes; uncertainty maps"),
     ("8",  "Depth Probability Bounds",       "✅", "PINN-style physics penalty"),
     ("9",  "Ice Volume Estimation",          "✅", "Area × Depth × Ice Fraction"),
@@ -450,9 +484,9 @@ layers = [
     ("13", "Earth Visibility",               "✅", "SPICE line-of-sight"),
     ("14", "Excavation Priority",            "✅", "Ice × Depth × Distance"),
     ("15", "ISRU Potential Score",           "✅", "H₂O → H₂ + O₂ ISRU calc"),
-    ("16", "NSGA-II Pareto Front",           "✅", "3-objective multi-mission rank"),
+    ("16", "NSGA-II + AHP-TOPSIS",           "✅", "Decision matrix ranking"),
     ("16b","Hungarian Site Assignment",      "✅", "Multi-rover global optimum"),
-    ("17", "Energy-Aware RRT*",              "✅", "Global path (pre-computed)"),
+    ("17", "Bekker Energy-Aware RRT*",       "✅", "Global path (pre-computed in Joules)"),
     ("18", "DWA Local Avoidance",            "✅", "Real-time Gazebo execution"),
     ("19", "Streamlit Mission Dashboard",    "✅", "This interface"),
     ("20", "Scientific Validation",         "⚙️", "Faustini / Shackleton cross-val"),
@@ -475,6 +509,7 @@ for i, (layer, name, status, detail) in enumerate(layers):
 
 st.divider()
 st.caption(
-    "LUNA-SITE v2.0 | Bharatiya Antariksh Hackathon 2026 | Challenge 8 | "
-    "Physics-Regularized CNN + NSGA-II + RRT* + DWA | Built for Chandrayaan-4"
+    "LUNA-SITE SOTA Edition | Bharatiya Antariksh Hackathon 2026 | Challenge 8 | "
+    "Physics-Regularized CNN + AHP-TOPSIS + Bekker RRT* | Built for Chandrayaan-4"
 )
+

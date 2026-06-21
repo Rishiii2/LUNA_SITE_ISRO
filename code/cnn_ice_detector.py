@@ -31,7 +31,7 @@ from typing import Tuple, Optional
 
 class LunarIceCNN(nn.Module):
     """
-    4-channel Stokes → 3-class CNN (Ice | Rock | Regolith).
+    5-channel Multi-Modal (4 Stokes + 1 DEM Roughness) → 3-class CNN (Ice | Rock | Regolith).
     Dropout layers are used for MC uncertainty estimation during inference.
     """
 
@@ -41,7 +41,7 @@ class LunarIceCNN(nn.Module):
 
         # --- Encoder block 1 ---
         self.conv1 = nn.Sequential(
-            nn.Conv2d(4, 32, kernel_size=3, padding=1),
+            nn.Conv2d(5, 32, kernel_size=3, padding=1),
             nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
             nn.Conv2d(32, 32, kernel_size=3, padding=1),
@@ -129,7 +129,7 @@ class LunarIceCNN(nn.Module):
         Compute Grad-CAM heatmap for a given input and target class.
 
         Grad-CAM proves the CNN is attending to radar physics patterns
-        (high CPR / low DOP regions), NOT crater geometry — critical for
+        (high Volume scattering / low roughness regions), NOT crater geometry — critical for
         ISRO XAI requirements.
         """
         self.zero_grad()
@@ -177,7 +177,7 @@ def mc_dropout_predict(
     Parameters
     ----------
     model    : LunarIceCNN
-    x        : (B, 4, H, W) input tensor
+    x        : (B, 5, H, W) input tensor
     n_passes : number of MC samples (50 is standard in literature)
 
     Returns
@@ -212,9 +212,8 @@ class PhysicsRegularizedLoss(nn.Module):
     Loss = CrossEntropy(pred, target)
          + λ_physics * Physics_Penalty
 
-    Physics penalty: enforces that ice-classified pixels have
-    CPR > CPR_threshold and DOP < DOP_threshold, derived from
-    the electromagnetic penetration equation.
+    Physics penalty: enforces that ice-classified pixels must have
+    high Volume scattering (V > V_threshold) from the m-chi decomposition.
 
     This is NOT a true PINN (which requires PDE embedding via autodiff).
     It is a physics-REGULARIZED classifier — accurate terminology for ISRO.
@@ -223,31 +222,27 @@ class PhysicsRegularizedLoss(nn.Module):
     def __init__(
         self,
         alpha: float = 0.1,
-        cpr_thresh: float = 1.0,
-        dop_thresh: float = 0.13,
+        v_thresh: float = 0.4,
     ):
         super().__init__()
-        self.alpha       = alpha
-        self.cpr_thresh  = cpr_thresh
-        self.dop_thresh  = dop_thresh
-        self.ce          = nn.CrossEntropyLoss()
+        self.alpha    = alpha
+        self.v_thresh = v_thresh
+        self.ce       = nn.CrossEntropyLoss()
 
     def forward(
         self,
         logits:    torch.Tensor,   # (B, n_classes)
         targets:   torch.Tensor,   # (B,)
-        cpr_vals:  torch.Tensor,   # (B,)
-        dop_vals:  torch.Tensor,   # (B,)
+        v_vals:    torch.Tensor,   # (B,)
     ) -> Tuple[torch.Tensor, dict]:
         ce_loss = self.ce(logits, targets)
 
         # Ice class = 1
         ice_probs = torch.softmax(logits, dim=-1)[:, 1]
 
-        # Physics penalty: if model predicts ice where CPR<=1, penalise
-        cpr_violation = F.relu(self.cpr_thresh - cpr_vals)  # > 0 when CPR too low
-        dop_violation = F.relu(dop_vals - self.dop_thresh)  # > 0 when DOP too high
-        physics_pen   = (ice_probs * (cpr_violation + dop_violation)).mean()
+        # Physics penalty: if model predicts ice where Volume scattering is low, penalise
+        v_violation = F.relu(self.v_thresh - v_vals)  # > 0 when V too low
+        physics_pen = (ice_probs * v_violation).mean()
 
         total_loss = ce_loss + self.alpha * physics_pen
 
@@ -326,7 +321,7 @@ if __name__ == "__main__":
     torch.manual_seed(42)
 
     model = LunarIceCNN(dropout_p=0.3)
-    x     = torch.randn(4, 4, 64, 64)
+    x     = torch.randn(4, 5, 64, 64)
 
     # Standard forward
     logits = model(x)
@@ -346,9 +341,8 @@ if __name__ == "__main__":
     # Physics loss
     crit = PhysicsRegularizedLoss(alpha=0.1)
     targets  = torch.tensor([1, 0, 2, 1])
-    cpr_vals = torch.tensor([1.3, 0.5, 0.6, 1.1])
-    dop_vals = torch.tensor([0.08, 0.20, 0.25, 0.09])
-    loss, info = crit(logits, targets, cpr_vals, dop_vals)
+    v_vals   = torch.tensor([0.45, 0.20, 0.15, 0.38])
+    loss, info = crit(logits, targets, v_vals)
     print(f"Loss breakdown: {info}")
 
     # Depth bounds

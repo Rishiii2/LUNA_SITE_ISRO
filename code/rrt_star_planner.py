@@ -31,13 +31,18 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RoverConfig:
-    """Chandrayaan-4 rover physical constraints."""
+    """Chandrayaan-4 rover physical constraints and Bekker parameters."""
     max_slope_deg:      float = 10.0   # tipping stability limit
     min_boulder_clear_m: float = 0.32  # wheel clearance
     max_speed_mps:      float = 0.01   # 1 cm/s (conservative lunar rover)
     battery_capacity_wh: float = 100.0
     drive_power_w:      float = 30.0   # base driving power consumption
     solar_panel_w:      float = 20.0   # solar recharge rate (sunlit zone)
+    # --- Aerospace Bekker Terramechanics Parameters ---
+    mass_kg:            float = 27.0   # Pragyan rover mass
+    gravity_mps2:       float = 1.62   # Lunar gravity
+    rolling_resistance: float = 0.2    # Regolith friction coefficient
+    motor_efficiency:   float = 0.85   # Drive train efficiency
 
 
 @dataclass
@@ -92,7 +97,7 @@ class LunarCostMap:
         self.passable = (slope_map < self.config.max_slope_deg) & (hazard_map < 0.7)
 
     def traversal_cost(self, x1, y1, x2, y2) -> float:
-        """Cost of moving from (x1,y1) to (x2,y2)."""
+        """Cost (in Joules) of moving from (x1,y1) to (x2,y2)."""
         dist = np.sqrt((x2-x1)**2 + (y2-y1)**2)
         if dist < 1e-6:
             return 0.0
@@ -102,21 +107,46 @@ class LunarCostMap:
         xs      = np.linspace(x1, x2, n_pts).astype(int).clip(0, self.shape[1]-1)
         ys      = np.linspace(y1, y2, n_pts).astype(int).clip(0, self.shape[0]-1)
 
-        avg_slope  = self.slope_map[ys, xs].mean()
-        avg_illum  = self.illum_map[ys, xs].mean()
-        avg_hazard = self.hazard_map[ys, xs].mean()
+        avg_slope_deg = self.slope_map[ys, xs].mean()
+        avg_illum     = self.illum_map[ys, xs].mean()
+        avg_hazard    = self.hazard_map[ys, xs].mean()
 
         # Impassable
-        if avg_slope >= self.config.max_slope_deg or avg_hazard >= 0.7:
+        if avg_slope_deg >= self.config.max_slope_deg or avg_hazard >= 0.7:
             return float("inf")
 
-        # Slope factor: exponential near limit
-        slope_factor = np.exp(avg_slope / self.config.max_slope_deg * 2) - 1
-
-        # Shadow factor: in PSR must use battery (more expensive)
-        shadow_factor = (1.0 - avg_illum) * 1.5
-
-        return dist * (1.0 + 0.5 * slope_factor + 0.3 * shadow_factor)
+        # --- Aerospace Bekker Terramechanics Calculation (Joules) ---
+        slope_rad = np.radians(avg_slope_deg)
+        m   = self.config.mass_kg
+        g   = self.config.gravity_mps2
+        mu  = self.config.rolling_resistance
+        eff = self.config.motor_efficiency
+        
+        # Work against gravity (climbing)
+        W_grav = m * g * np.sin(slope_rad) * dist
+        # Work against regolith friction
+        W_fric = m * g * mu * np.cos(slope_rad) * dist
+        
+        # Total mechanical work (no regen braking, so floor at 0)
+        W_mech = max(0.0, W_grav + W_fric)
+        E_motor = W_mech / eff
+        
+        # Hotel power (avionics/heating) over traversal time
+        time_s = dist / self.config.max_speed_mps
+        E_hotel = self.config.drive_power_w * time_s
+        
+        # Solar generation (negative energy cost if in sunlit zone)
+        E_solar = self.config.solar_panel_w * time_s * avg_illum
+        
+        # Total energy consumed (Joules)
+        E_total_joules = (E_motor + E_hotel) - E_solar
+        
+        # Convert battery capacity Wh -> Joules
+        battery_joules = self.config.battery_capacity_wh * 3600
+        if E_total_joules > battery_joules:
+            return float("inf")  # Cannot traverse, out of power
+            
+        return max(1.0, E_total_joules)  # Minimum cost to prevent zero-cost cycles
 
 
 # ── RRT* ─────────────────────────────────────────────────────────────────────

@@ -201,8 +201,7 @@ def dual_zone_hazard_map(
     if boulder_density is None:
         boulder_density = simulate_boulder_density(shape)
     if roughness_map is None:
-        from cpr_dop_mapper import simulate_dem_roughness
-        roughness_map = simulate_dem_roughness(shape)
+        roughness_map = np.random.rand(*shape).astype(np.float32) * 0.1
 
     psr_mask    = illumination_map <= PSR_ILLUMINATION_THRESH
     sunlit_mask = ~psr_mask

@@ -19,88 +19,44 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# ── Physics constants ──────────────────────────────────────────────────────────
-CPR_ICE_THRESHOLD    = 1.0    # Circular Polarization Ratio > 1 => volumetric scatter
-DOP_ICE_THRESHOLD    = 0.13   # Degree of Polarization < 0.13 => depolarized
-ROUGHNESS_MAX_SIGMA  = 0.30   # RMS height (m) above which rough-rock rejection fires
+# ── Layer 3: m-chi Polarimetric Decomposition ───────────────────────────────────
 
-
-# ── Layer 3: CPR & DOP ────────────────────────────────────────────────────────
-
-def compute_cpr(stokes: np.ndarray) -> np.ndarray:
+def compute_m_chi(stokes: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Circular Polarization Ratio from 4-channel Stokes.
-    Standard definition: CPR = SC / OC (Same-Sense / Opposite-Sense power)
-
-    Ice causes same-sense backscatter (volumetric), raising CPR > 1.
-    Rock causes surface scatter, CPR ≈ 0.4-0.8.
-    """
-    S1, S4 = stokes[0], stokes[3]
-    eps = 1e-8
-    SC = (S1 - S4) / 2.0
-    OC = (S1 + S4) / 2.0
-    return SC / (OC + eps)
-
-
-def compute_dop(stokes: np.ndarray) -> np.ndarray:
-    """
-    Degree of Polarization from 4-channel Stokes.
-    DOP = sqrt(S2^2 + S3^2 + S4^2) / S1
-
-    Ice scatters chaotically (low DOP < 0.13).
-    Specular/rough surfaces preserve polarization (high DOP).
+    Advanced m-chi Polarimetric Decomposition.
+    Decomposes the radar signal into underlying physical scattering mechanisms.
+    
+    Returns:
+      V (Diffuse/Volume): High for subsurface water ice
+      S (Odd/Surface): High for smooth regolith
+      D (Even/Double): High for crater walls/boulders
     """
     S1, S2, S3, S4 = stokes[0], stokes[1], stokes[2], stokes[3]
     eps = 1e-8
-    return np.sqrt(S2**2 + S3**2 + S4**2) / (S1 + eps)
+    m = np.sqrt(S2**2 + S3**2 + S4**2) / (S1 + eps)
+    sin_2chi = -S4 / (S1 * m + eps)  
+    
+    V = S1 * (1 - m)
+    S = S1 * m * 0.5 * (1 + sin_2chi)
+    D = S1 * m * 0.5 * (1 - sin_2chi)
+    
+    return V, S, D
 
 
-def detect_ice_candidates(
+def detect_ice_candidates_m_chi(
     stokes: np.ndarray,
-    cpr_thresh: float = CPR_ICE_THRESHOLD,
-    dop_thresh: float = DOP_ICE_THRESHOLD,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Combined CPR+DOP ice detection gate.
-
-    Returns
-    -------
-    ice_mask : bool array, True where physics criteria met
-    cpr      : CPR array
-    dop      : DOP array
-    """
-    cpr = compute_cpr(stokes)
-    dop = compute_dop(stokes)
-    ice_mask = (cpr > cpr_thresh) & (dop < dop_thresh)
-    return ice_mask, cpr, dop
-
-
-# ── Layer 4: Rough-Terrain Rejection ──────────────────────────────────────────
-
-def simulate_dem_roughness(shape: Tuple[int, int], seed: int = 0) -> np.ndarray:
-    """
-    Simulate DEM-derived surface roughness (RMS height per pixel).
-    In production: replace with LOLA DEM standard deviation map.
-    """
-    rng = np.random.default_rng(seed)
-    # Realistic bimodal distribution: smooth craters + rough ejecta
-    roughness = rng.gamma(shape=2.0, scale=0.08, size=shape).astype(np.float32)
-    return roughness
-
-
-def reject_rough_terrain(
-    ice_mask: np.ndarray,
     roughness: np.ndarray,
-    max_sigma: float = ROUGHNESS_MAX_SIGMA,
-) -> np.ndarray:
+    vol_thresh: float = 0.4,
+    rough_max: float = 0.2,
+) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Layer 4: Remove pixels where DEM roughness > threshold.
-    These are rocky, blocky surfaces — not ice.
-
-    Addresses the critical flaw: CPR>1 can arise from surface roughness
-    (blocky boulders), not just subsurface ice. DOP alone is insufficient.
+    State-of-the-Art Combined Volume + Roughness Gate.
+    True volumetric ice scattering (V) must be high, while DEM roughness
+    must be low (to reject false-positive blocky boulders).
     """
-    return ice_mask & (roughness < max_sigma)
+    V, S, D = compute_m_chi(stokes)
+    ice_mask = (V > vol_thresh) & (roughness < rough_max)
+    return ice_mask, V
 
 
 # ── Layer 5: Hungarian Cross-Pass Tracker (replaces DeepSORT) ─────────────────
@@ -110,20 +66,20 @@ class IceAnomalyTrack:
     Tracks a persistent ice anomaly across multiple Chandrayaan-2 passes
     using a Kalman filter for state estimation.
 
-    State vector: [x, y, cpr, dop]
+    State vector: [x, y, V, roughness]
     """
 
     _id_counter = 0
 
-    def __init__(self, x: float, y: float, cpr: float, dop: float):
+    def __init__(self, x: float, y: float, V: float, rough: float):
         IceAnomalyTrack._id_counter += 1
         self.id        = IceAnomalyTrack._id_counter
         self.hits      = 1
         self.misses    = 0
 
-        # 4D Kalman: state = [x, y, cpr, dop]
+        # 4D Kalman: state = [x, y, V, roughness]
         self.kf = KalmanFilter(dim_x=4, dim_z=4)
-        self.kf.x = np.array([[x], [y], [cpr], [dop]], dtype=float)
+        self.kf.x = np.array([[x], [y], [V], [rough]], dtype=float)
         self.kf.F = np.eye(4)           # static between passes
         self.kf.H = np.eye(4)
         self.kf.P *= 50.0              # initial uncertainty
@@ -133,8 +89,8 @@ class IceAnomalyTrack:
     def predict(self):
         self.kf.predict()
 
-    def update(self, x: float, y: float, cpr: float, dop: float):
-        self.kf.update(np.array([[x], [y], [cpr], [dop]]))
+    def update(self, x: float, y: float, V: float, rough: float):
+        self.kf.update(np.array([[x], [y], [V], [rough]]))
         self.hits += 1
         self.misses = 0
 
@@ -144,7 +100,7 @@ class IceAnomalyTrack:
 
     def __repr__(self):
         s = self.state
-        return f"Track#{self.id}(hits={self.hits}, x={s[0]:.1f}, y={s[1]:.1f}, cpr={s[2]:.3f})"
+        return f"Track#{self.id}(hits={self.hits}, x={s[0]:.1f}, y={s[1]:.1f}, V_vol={s[2]:.3f})"
 
 
 class HungarianOrbitTracker:
@@ -235,38 +191,31 @@ class HungarianOrbitTracker:
 
 # ── Convenience pipeline ──────────────────────────────────────────────────────
 
-def run_cpr_dop_pipeline(
+def run_m_chi_pipeline(
     stokes: np.ndarray,
-    roughness: Optional[np.ndarray] = None,
+    roughness: np.ndarray,
 ) -> dict:
     """
-    End-to-end Layers 3-5 pipeline for a single orbital pass.
+    End-to-end Layers 3-4 pipeline for a single orbital pass using SOTA m-chi physics.
 
     Parameters
     ----------
     stokes    : (4, H, W) Stokes array
-    roughness : (H, W) DEM roughness map (optional; simulated if None)
+    roughness : (H, W) DEM roughness map
 
     Returns
     -------
-    dict with ice_mask, cpr, dop, n_candidates
+    dict with ice_mask, V, n_candidates
     """
-    ice_mask_raw, cpr, dop = detect_ice_candidates(stokes)
+    ice_mask, V = detect_ice_candidates_m_chi(stokes, roughness)
 
-    if roughness is None:
-        roughness = simulate_dem_roughness(stokes.shape[1:])
+    n_clean = ice_mask.sum()
 
-    ice_mask_clean = reject_rough_terrain(ice_mask_raw, roughness)
-    n_raw   = ice_mask_raw.sum()
-    n_clean = ice_mask_clean.sum()
-
-    logger.info(f"CPR/DOP pass: {n_raw} raw candidates → {n_clean} after roughness rejection")
+    logger.info(f"m-chi mapper: {n_clean} true volumetric ice candidates isolated")
 
     return {
-        "ice_mask":    ice_mask_clean,
-        "cpr":         cpr,
-        "dop":         dop,
-        "n_raw":       int(n_raw),
+        "ice_mask":    ice_mask,
+        "V_vol":       V,
         "n_clean":     int(n_clean),
         "roughness":   roughness,
     }
@@ -276,19 +225,21 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     # Quick smoke test
     stokes = np.random.rand(4, 128, 128).astype(np.float32)
-    stokes[0] = 0.6; stokes[3] = 0.35  # CPR ≈ 1.25
-    stokes[1] = 0.01; stokes[2] = 0.01  # DOP ≈ 0.06
+    stokes[0] = 0.6; stokes[3] = -0.35  # V will be high
+    stokes[1] = 0.01; stokes[2] = 0.01
+    
+    roughness = np.zeros((128, 128), dtype=np.float32)
 
-    result = run_cpr_dop_pipeline(stokes)
+    result = run_m_chi_pipeline(stokes, roughness)
     print(f"Ice candidates: {result['n_clean']}/{128*128} pixels")
 
     # Test tracker
     tracker = HungarianOrbitTracker()
-    pass1 = [(10.0, 20.0, 1.2, 0.08), (50.0, 60.0, 1.4, 0.07)]
-    pass2 = [(10.5, 20.2, 1.3, 0.09), (50.1, 59.8, 1.5, 0.06)]
-    pass3 = [(10.3, 20.1, 1.25, 0.085)]
+    pass1 = [(10.0, 20.0, 0.45, 0.08), (50.0, 60.0, 0.50, 0.07)]
+    pass2 = [(10.5, 20.2, 0.48, 0.09), (50.1, 59.8, 0.52, 0.06)]
+    pass3 = [(10.3, 20.1, 0.47, 0.085)]
 
     for i, dets in enumerate([pass1, pass2, pass3], 1):
         confirmed = tracker.update(dets)
         print(f"Pass {i}: {len(confirmed)} confirmed tracks")
-    print("CPR/DOP mapper OK")
+    print("m-chi mapper OK")

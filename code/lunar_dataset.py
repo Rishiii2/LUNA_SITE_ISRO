@@ -16,37 +16,37 @@ from generate_synthetic_isro_data import generate_dataset
 
 class LunarDFSARDataset(Dataset):
     """
-    PyTorch Dataset for 4-channel DFSAR Stokes patches.
+    PyTorch Dataset for 5-channel Multi-Modal DFSAR patches (4 Stokes + 1 DEM Roughness).
 
     Weak-supervised labeling override: even if a patch is generated
-    as 'regolith', if its CPR/DOP values satisfy the ice physics gate,
-    the label is promoted to Ice (class 1). This removes the need for
-    hand-labeled ground truth — critical for a real ISRO dataset.
+    as 'regolith', if its Volume scattering (V) satisfies the ice physics gate,
+    the label is promoted to Ice (class 1).
     """
 
     def __init__(
         self,
         data_dir:    str   = "data",
         augment:     bool  = True,
-        cpr_thresh:  float = 1.0,
-        dop_thresh:  float = 0.13,
+        v_thresh:    float = 0.4,
     ):
-        self.augment    = augment
-        self.cpr_thresh = cpr_thresh
-        self.dop_thresh = dop_thresh
+        self.augment  = augment
+        self.v_thresh = v_thresh
 
         # Load
-        self.stokes = np.load(os.path.join(data_dir, "stokes.npy"))
-        self.labels = np.load(os.path.join(data_dir, "labels.npy"))
-        self.cpr    = np.load(os.path.join(data_dir, "cpr.npy"))
-        self.dop    = np.load(os.path.join(data_dir, "dop.npy"))
+        stokes_4ch   = np.load(os.path.join(data_dir, "stokes.npy"))
+        roughness    = np.load(os.path.join(data_dir, "roughness.npy"))
+        self.labels  = np.load(os.path.join(data_dir, "labels.npy"))
+        self.v_vol   = np.load(os.path.join(data_dir, "v_vol.npy"))
 
-        # Weak labeling override
-        ice_gate = (self.cpr > self.cpr_thresh) & (self.dop < self.dop_thresh)
+        # Fuse 4-channel Stokes with 1-channel Roughness into 5-channel tensor
+        self.stokes = np.concatenate([stokes_4ch, np.expand_dims(roughness, axis=1)], axis=1)
+
+        # Weak labeling override based on continuous m-chi physics
+        ice_gate = (self.v_vol > self.v_thresh)
         self.labels = np.where(ice_gate, 1, self.labels).astype(np.int64)
 
         # Normalize each channel to [0, 1]
-        for c in range(4):
+        for c in range(5):
             ch = self.stokes[:, c]
             vmin, vmax = ch.min(), ch.max()
             if vmax > vmin:
@@ -56,29 +56,24 @@ class LunarDFSARDataset(Dataset):
         return len(self.labels)
 
     def __getitem__(self, idx):
-        stokes = self.stokes[idx].copy()  # (4, H, W)
+        stokes = self.stokes[idx].copy()  # (5, H, W)
         label  = int(self.labels[idx])
-        cpr    = float(self.cpr[idx])
-        dop    = float(self.dop[idx])
+        v_vol  = float(self.v_vol[idx])
 
         if self.augment:
-            # Random horizontal/vertical flip
             if np.random.rand() > 0.5:
                 stokes = stokes[:, :, ::-1].copy()
             if np.random.rand() > 0.5:
                 stokes = stokes[:, ::-1, :].copy()
-            # Random 90-degree rotation
             k = np.random.randint(0, 4)
             stokes = np.rot90(stokes, k=k, axes=(1, 2)).copy()
-            # Small Gaussian noise
             stokes += np.random.normal(0, 0.005, stokes.shape).astype(np.float32)
             stokes = np.clip(stokes, 0.0, 1.0)
 
         return {
             "stokes": torch.tensor(stokes, dtype=torch.float32),
             "label":  torch.tensor(label,  dtype=torch.long),
-            "cpr":    torch.tensor(cpr,    dtype=torch.float32),
-            "dop":    torch.tensor(dop,    dtype=torch.float32),
+            "v_vol":  torch.tensor(v_vol,  dtype=torch.float32),
         }
 
 
@@ -99,7 +94,7 @@ if __name__ == "__main__":
     sample = ds[0]
     print(f"Dataset size: {len(ds)}")
     print(f"Stokes shape: {sample['stokes'].shape}")
-    print(f"Label: {sample['label'].item()} | CPR: {sample['cpr']:.3f} | DOP: {sample['dop']:.3f}")
+    print(f"Label: {sample['label'].item()} | V_vol: {sample['v_vol']:.3f}")
     classes, counts = np.unique(ds.labels, return_counts=True)
     for c, n in zip(classes, counts):
         names = {0: "Regolith", 1: "Ice", 2: "Rock"}
