@@ -1,36 +1,38 @@
 LUNA-SITE Project Roadmap
 =========================
 
-Phase 1: Idea Submission (What We Have Done - 100% Complete)
+Phase 1: SOTA Physics Integration (What We Have Done - 100% Complete)
 ------------------------------------------------------------
-You have successfully built the theoretical foundation and the software prototype. You are ready to submit your PPT right now.
-1. The Core Architecture: Designed the 21-Layer, 5-Phase LUNA-SITE pipeline directly aligned with Chandrayaan-4 constraints (<10° slope, <0.32m boulders).
-2. The Documentation: Generated the Master Essay (V5.docx), the PPT Draft (.md), and the Comprehensive Technical Documentation (.md) outlining the exact physics (CPR, DOP, PINN equations).
-3. Flaw Mitigation: Handled the 4 massive logic traps (Optical Paradox, Black Box AI, Depth Overconfidence, 30-Hour Compute Trap) to prove extreme engineering maturity.
-4. The Code Prototype: Built the PyTorch CNN structure, the YOLOv8 Dual-Zone script, the Weak-Labeling PyTorch DataLoader, and the interactive Streamlit Mission Control Dashboard.
+You have successfully built the theoretical foundation and the software prototype. The codebase has evolved drastically from basic heuristics to State-of-the-Art (SOTA) aerospace algorithms.
+1. The Core Architecture: Designed the 21-Layer, 5-Phase LUNA-SITE pipeline directly aligned with Chandrayaan-4 constraints.
+2. The Documentation: Generated Master Essays, PPT Drafts, and the Comprehensive Technical Evolution History outlining how we replaced flawed formulas with exact science.
+3. Flaw Mitigation & Overhaul (The Code Changes):
+   - Flaw: CPR/DOP Heuristic Formula Error.
+   - Fix: Completely rewrote `cpr_dop_mapper.py` to use $m-\chi$ Polarimetric Decomposition, isolating Volume Scattering (V > 0.4) using exact Stokes vector math (Chandrayaan-2 standard).
+   - Flaw: Basic RRT* lacked battery tracking.
+   - Fix: Rewrote `rrt_star_planner.py` to use Bekker Terramechanics, calculating exact Joules of energy consumed against lunar gravity ($1.62 m/s^2$) and regolith friction.
+   - Flaw: Simple Pareto optimization.
+   - Fix: Rewrote `nsga2_optimizer.py` to use the AHP-TOPSIS decision matrix, weighing 5 constraints to rank the final landing target.
+4. The Code Prototype: Built the 5-Channel Physics-Informed CNN, the YOLOv8 Dual-Zone script, and a sleek Streamlit Mission Control Dashboard featuring a live Bekker battery gauge.
 
 Phase 2: Grand Finale Preparation (What Is Left To Do - July to August)
 -----------------------------------------------------------------------
 Before the 30-hour live coding event, your team of 3 needs to physically prepare the actual data and models.
 
 1. Secure the Real ISRO Data (Person A - Data Engineer)
-   - The Task: Currently, our Python scripts use generate_synthetic_isro_data.py. You need to go to the ISRO ISSDC PRADAN portal and download the real Chandrayaan-2 DFSAR and OHRC datasets for the lunar south pole (specifically around Mons Mouton or Faustini crater).
-   - The Goal: Pass those real .xml and .img files through your lunar_dataset.py script to ensure they parse without crashing.
+   - The Task: Currently, our Python scripts use `generate_synthetic_isro_data.py`. You need to go to the ISRO ISSDC PRADAN portal and download the real Chandrayaan-2 DFSAR and OHRC datasets.
 
 2. Pre-Train the Models (Person B - AI/ML Engineer)
-   - The Task: During the 30-hour finale, you cannot train models from scratch. Over the next month, you need to run train_cnn_pinn.py on the real DFSAR data on your local GPU or Google Colab.
-   - The Goal: Generate the actual cnn_weights_best.pt file so that on August 6th, you just plug in the weights and run the Grad-CAM inference live for the judges.
+   - The Task: Run `train_cnn_pinn.py` on the real DFSAR data on your local GPU or Google Colab.
+   - The Goal: Generate the actual `cnn_weights_best.pt` file.
 
 3. Build the Gazebo Digital Twin (Person C - Robotics Engineer)
    - The Task: We have the Streamlit dashboard, but the actual rover simulation needs to be built.
-   - The Goal: Import a LOLA DEM (Digital Elevation Model) into the Gazebo simulator. Port your existing MATLAB RRT* and DWA algorithms into ROS2 Python nodes, and make a rover drive over the craters while avoiding 0.32m boulders.
+   - The Goal: Port your existing Bekker RRT* algorithms into ROS2 Python nodes, and make a rover drive over craters while tracking battery depletion.
 
 Phase 3: The 30-Hour Grand Finale (August 6–7)
 ----------------------------------------------
-When the clock starts, your team does not write code from scratch. You do Integration and Polish:
-1. Connect the PyTorch CNN outputs (Ice Maps) into the ROS2 Gazebo simulator (Costmaps).
-2. Start the Streamlit Dashboard and route the live ROS2 rover telemetry to it.
-3. Prepare for the final pitch to the ISRO scientists by running the live simulation and showing the Pareto Front cost/risk metrics on the dashboard.
-
-Your Immediate Action Item:
-Convert the LUNA_SITE_PPT_Draft.md into your actual PowerPoint/Google Slides presentation and submit it before July 1st!
+Integration and Polish:
+1. Connect PyTorch CNN outputs into the ROS2 Gazebo simulator (Costmaps).
+2. Start the Streamlit Dashboard and route live ROS2 rover telemetry (battery, position) to it.
+3. Run the live demo for ISRO scientists.
