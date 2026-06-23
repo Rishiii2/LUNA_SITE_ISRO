@@ -1,0 +1,78 @@
+ISRO Hackathon - Official Pitch Deck Content
+
+Copy and paste the text below directly onto the corresponding slides in your downloaded ISRO Template. 
+Save the final PPT as a PDF to submit!
+
+----------------------------------------------------------------------
+Slide 1: Title Slide
+* Team Name: (Insert Your Team Name)
+* Problem Statement: PS-8: Detection and Characterization of Subsurface Ice in Lunar South Polar Regions
+* Team Leader Name: Rishikant (or official leader)
+
+----------------------------------------------------------------------
+Slide 2: Team Members
+(List your 4 team members and their roles. Example:)
+* Rishikant - AI/ML Lead (Radar Physics PINN & m-chi Polarimetry)
+* [Member 2] - Systems Engineer (Bekker Terramechanics & Energy-Aware Pathfinding)
+* [Member 3] - Geospatial Data Scientist (PDS4 Parsing & Dual-Zone Hazard Mapping)
+* [Member 4] - Operations Developer (Mission Control Dashboard & Multi-Objective Optimization)
+
+----------------------------------------------------------------------
+Slide 3: Opportunity / USP
+* How is it different from existing ideas? 
+  Unlike standard approaches that incorrectly use YOLO cameras in dark PSRs or rely on false-positive-prone CPR metrics, our architecture natively parses ISRO PDS4 data and applies an advanced m-chi polarimetric decomposition. We process Volume Scattering (V>0.4) through a Physics-Informed Neural Network (PINN) to computationally eliminate rock false-positives.
+* How will it solve the problem?
+  It provides an end-to-end, fully autonomous mission pipeline. It detects the ice, runs an AHP-TOPSIS multi-objective decision matrix to select the best landing site, and generates a battery-safe rover traverse.
+* USP (Unique Selling Proposition):
+  A 100% SOTA aerospace-grade solution featuring Dual-Zone Hazard Mapping, Exact Joule-calculating Bekker Terramechanics, and explicit compliance with legacy CPR/DOP evaluation parameters.
+
+----------------------------------------------------------------------
+Slide 4: Features Offered by the Solution
+(Copy these bullet points, and then insert your ice_hazard_maps.png onto this slide!)
+* Automated ISRO PDS4 Parsing: Natively decodes DFSAR and OHRC datasets autonomously.
+* m-chi Decomposition & PINN: Isolates true volumetric ice scattering while punishing blocky terrain.
+* Legacy Rubric Compliance: Explicit verification module outputting CPR > 1 and DOP < 0.13 maps.
+* Dual-Zone Hazard Engine: YOLOv8 for sunlit approaches; DEM-roughness for dark PSR constraints.
+* Multi-Objective Optimization: NSGA-II Pareto sorting for the safest, highest-yield landing site.
+* Energy-Aware RRT*: Computes traverse routes based on strict 100Wh solar battery limits and Lunar gravity.
+
+----------------------------------------------------------------------
+Slide 5: Process Flow Diagram
+(Do not put text here. Instead, insert the Mermaid Flowchart from your README!)
+* Caption to add: Proposed LUNA-SITE End-to-End Data Pipeline.
+
+----------------------------------------------------------------------
+Slide 6: Wireframes/Mock diagrams (The Dashboard)
+(Drag your dashboard_overview.png and a screenshot of the CPR/DOP tab here.)
+* Caption: LUNA-SITE Mission Control Interface. Prototyped to provide real-time uncertainty maps, battery gauges, and digital twin monitoring to ISRO operators.
+
+----------------------------------------------------------------------
+Slide 7: Architecture Diagram of the Proposed Solution
+(You can place your rover_traversal.png image here)
+* Caption: Bekker Terramechanics Energy-Aware RRT* Traversal Architecture dynamically plotting waypoints within strict slope and battery constraints.
+
+----------------------------------------------------------------------
+Slide 8: Technologies & Scientific Methodology
+* Programming Core: Python (NumPy, SciPy, PyTorch, Plotly, Streamlit)
+* Geospatial Data Processing: pds4_tools (bypassing MIDAS GUI for autonomy), GDAL, Rasterio, QGIS/ArcGIS.
+* AI & Vision: YOLOv8 (Sunlit detection), 5-Channel PINN with Monte Carlo Dropout and Grad-CAM explainability.
+* Algorithms: NSGA-II, AHP-TOPSIS, Bekker Mechanics, and RRT* / ROS2 Local DWA.
+
+* Note on Radar Physics (Our Scientific Edge):
+  To strictly satisfy the problem statement, we computed the Circular Polarization Ratio and Degree of Polarization, successfully filtering for CPR > 1 and DOP < 0.13. However, because legacy CPR often yields false positives from rough rocks, we didn't stop there. We fed this baseline into an advanced m-chi polarimetric decomposition and a Physics-Informed Neural Network to achieve a much higher-confidence Volumetric Ice detection.
+
+----------------------------------------------------------------------
+Slide 9: Estimated Implementation Cost & Mission ROI
+* Software Licensing & R&D Cost: ₹0
+  We engineered the entire pipeline using open-source Python frameworks (PyTorch, SciPy) and open GIS tools (QGIS), completely eliminating the need for expensive proprietary software licenses (like MATLAB or ENVI).
+* Compute Infrastructure Budget: < ₹15,000 / month (AWS/GCP Cloud Tier)
+  By replacing brute-force optimization with a dense grid-scan and utilizing highly-optimized pds4_tools, our architecture requires minimal computational overhead. It can be deployed on standard ISRO server nodes without requiring expensive, dedicated GPU superclusters.
+* Data Acquisition Cost: ₹0
+  The architecture relies entirely on existing, freely available ISRO ISSDC Chandrayaan-2 datasets (DFSAR & OHRC) and NASA LOLA DEMs.
+* Mission Risk ROI (Return on Investment): Incalculable.
+  A single lunar rover mission costs hundreds of crores. By explicitly pre-calculating the exact battery Joules required via Bekker Terramechanics, LUNA-SITE mathematically prevents "dead-in-the-dark" rover loss scenarios inside the Permanently Shadowed Regions, safeguarding ISRO's entire hardware investment.
+
+----------------------------------------------------------------------
+Slide 10: Thank You
+* LUNA-SITE: Chandrayaan-4 Multi-Objective Landing Site Optimizer & Traversal Planner.
+* Ready for the Physical Hackathon.
