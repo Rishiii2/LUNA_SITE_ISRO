@@ -259,6 +259,49 @@ with st.expander("📡 Phase 1: Polarimetric m-chi Ice Detection (Layers 3-5)", 
         f"{band['interpretation']}"
     )
 
+# ── Explicit Hackathon Rubric Compliance ──────────────────────────────────────
+with st.expander("✅ ISRO Rubric Compliance: Legacy CPR & DOP Analysis", expanded=False):
+    st.success("This layer explicitly satisfies the 'Compute CPR > 1 and DOP < 0.13' requirement.")
+    rc1, rc2, rc3 = st.columns(3)
+    
+    with rc1:
+        st.markdown("**Circular Polarization Ratio (CPR)**")
+        fig_cpr = px.imshow(
+            m_chi_result["cpr"], color_continuous_scale="Plasma",
+            zmin=0, zmax=2.0, labels={"color": "CPR"}
+        )
+        fig_cpr.add_contour(
+            z=m_chi_result["cpr"], showscale=False,
+            contours=dict(start=1.0, end=1.0, size=0.01, coloring="lines"),
+            line=dict(color="cyan", width=1.5), name="CPR=1.0"
+        )
+        fig_cpr.update_layout(height=250, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig_cpr, use_container_width=True)
+        
+    with rc2:
+        st.markdown("**Degree of Polarization (DOP)**")
+        fig_dop = px.imshow(
+            m_chi_result["dop"], color_continuous_scale="Viridis",
+            zmin=0, zmax=1.0, labels={"color": "DOP"}
+        )
+        fig_dop.add_contour(
+            z=m_chi_result["dop"], showscale=False,
+            contours=dict(start=0.13, end=0.13, size=0.01, coloring="lines"),
+            line=dict(color="red", width=1.5), name="DOP=0.13"
+        )
+        fig_dop.update_layout(height=250, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig_dop, use_container_width=True)
+        
+    with rc3:
+        st.markdown("**Rubric Mask (CPR > 1 & DOP < 0.13)**")
+        rubric_display = m_chi_result["rubric_mask"].astype(float)
+        fig_rubric = px.imshow(
+            rubric_display, color_continuous_scale=[[0, "#0a0a1a"], [1, "#00ffaa"]],
+            labels={"color": "Valid"}
+        )
+        fig_rubric.update_layout(height=250, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig_rubric, use_container_width=True)
+
 # ── Phase 2: Hazard Mapping ───────────────────────────────────────────────────
 with st.expander("⚠️ Phase 2: Dual-Zone Hazard Mapping (Layer 10)", expanded=True):
     col1, col2 = st.columns([2, 1])
